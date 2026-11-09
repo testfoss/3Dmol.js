@@ -99,3 +99,17 @@ If you use 3Dmol.js, please cite our [Bioinformatics paper](http://bioinformatic
 ## Funding
 
 3DMol.js is funded through R35GM140753 (and previously R01GM108340) from the National Institute of General Medical Sciences. The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institute of General Medical Sciences or the National Institutes of Health.
+
+## Testfoss demo
+
+The `testfoss-demo` branch adds an isolated development-build and browser scenario at upstream pin `c26e390544b6388f86e50387cd4565759b4da0df`; upstream source, examples, tests, and lockfiles remain unchanged. See [the demo guide](testfoss/README.md) and [agent/reproduction notes](AGENTS.md).
+
+```sh
+./testfoss/run.sh package
+(cd testfoss && npm ci && npx playwright install chromium)
+./testfoss/run.sh browser
+```
+
+The complete locally modified module example is copied to new [`testfoss/module.html`](testfoss/module.html), preserving its `../build` and `../tests` paths while leaving `examples/module.html` pristine. The browser scenario uses `lmwebtest playwright` to verify local HEM sticks/spheres, surface hide/show, and two-frame animation controls.
+
+The build uses `npm ci --ignore-scripts` because the lab host lacked Cairo/Pango prerequisites for canvas. Upstream Jest could not initialize there and executed zero tests, so no native Jest pass is claimed. Generated builds, dependencies, and screenshots are not committed.

@@ -1,0 +1,72 @@
+let base_url = env("TESTFOSS_BASE_URL", "http://127.0.0.1:8112");
+mkdir("artifacts");
+
+program = _lmcode_ cli="lmwebtest playwright";
+let launch_options = "{\"args\":[\"--enable-unsafe-swiftshader\"]}";
+if (pw.env("TESTFOSS_CHROME_EXECUTABLE") != "") {
+  launch_options = "{\"executablePath\":\"" + pw.env("TESTFOSS_CHROME_EXECUTABLE") + "\",\"args\":[\"--enable-unsafe-swiftshader\"]}";
+}
+let b = pw.launch("chromium", launch_options);
+let p = b.new_page("{\"viewport\":{\"width\":1440,\"height\":1000}}");
+p.set_default_timeout(90000);
+p.goto(pw.env("TESTFOSS_BASE_URL") + "/testfoss/module.html");
+p.wait_for_function("globalThis.lab && lab.ready === true");
+$return.hem_atoms = p.evaluate("lab.model.selectedAtoms({ resn: 'HEM' }).length");
+$return.frames = p.evaluate("lab.trajectoryModel.getNumFrames()");
+$return.surface_initial = p.evaluate("lab.viewer.getSurface(lab.surfaceId)[0].mat.opacity");
+p.click("#surface-toggle");
+$return.surface_hidden = p.evaluate("lab.viewer.getSurface(lab.surfaceId)[0].mat.opacity");
+$return.surface_hidden_label = p.text_content("#structure-status");
+p.click("#surface-toggle");
+$return.surface_restored = p.evaluate("lab.viewer.getSurface(lab.surfaceId)[0].mat.opacity");
+$return.surface_restored_label = p.text_content("#structure-status");
+p.click("#animation-toggle");
+p.wait_for_timeout(750);
+$return.animation_playing = p.evaluate("lab.trajectoryViewer.isAnimated()") == "true";
+p.click("#animation-toggle");
+$return.animation_stopped = p.evaluate("!lab.trajectoryViewer.isAnimated()") == "true";
+p.click("#next-frame");
+p.locator("#animation-status").expect("toHaveText", "[\"Frame 2 / 2\"]");
+$return.next_frame = p.text_content("#animation-status");
+$return.resources = p.evaluate("performance.getEntriesByType('resource').map((entry) => entry.name)");
+p.screenshot("artifacts/3dmol.png", true);
+$return.page_errors = p.page_errors();
+$return.console_log = p.console_log();
+b.close();
+end _lmcode_
+
+let res = run_lmcode(program, {command: ["lmwebtest", "playwright", "--lmcode", "$DSLFILE"]});
+let stats = {pass: 0, fail: 0};
+fn check(condition, name, detail) {
+  if (condition) {
+    stats["pass"] = stats.get("pass", 0) + 1;
+    println(f"[PASS] {name}: {detail}");
+  } else {
+    stats["fail"] = stats.get("fail", 0) + 1;
+    println(f"[FAIL] {name}: {detail}");
+  }
+}
+check(res.get("ok", false), "lmwebtest run", "HEM, surface, and animation completed");
+if (!res.get("ok", false)) {
+  println(json_stringify(res));
+  exit(1);
+}
+let r = res.get("result", {});
+check(num(r.get("hem_atoms", "0")) == 172, "HEM sticks/spheres", r.get("hem_atoms", "0") + " atoms");
+check(num(r.get("frames", "0")) == 2, "animation frames", r.get("frames", "0"));
+check(num(r.get("surface_initial", "0")) == 0.35, "surface initial", r.get("surface_initial", "0"));
+check(num(r.get("surface_hidden", "1")) == 0, "surface hidden", r.get("surface_hidden", "1"));
+check(r.get("surface_hidden_label", "") == "Surface hidden; HEM sticks/spheres", "surface hidden label", r.get("surface_hidden_label", ""));
+check(num(r.get("surface_restored", "0")) == 0.35, "surface restored", r.get("surface_restored", "0"));
+check(r.get("surface_restored_label", "") == "Surface visible; HEM sticks/spheres", "surface restored label", r.get("surface_restored_label", ""));
+check(r.get("animation_playing", false), "animation playing", "viewer is animated");
+check(r.get("animation_stopped", false), "animation stopped", "viewer is stopped");
+check(r.get("next_frame", "") == "Frame 2 / 2", "next frame", r.get("next_frame", ""));
+check(contains(r.get("resources", ""), "/tests/auto/data/4hhb.bcif.gz"), "local BinaryCIF request", "4hhb.bcif.gz");
+check(contains(r.get("resources", ""), "/tests/test_structs/multi.pdb"), "local PDB request", "multi.pdb");
+check(len(json_parse(r.get("page_errors", "[]"))) == 0, "page errors", r.get("page_errors", "[]"));
+check(!contains(r.get("console_log", ""), "\"type\":\"error\""), "console errors", "none");
+println(f"3Dmol browser integration: {stats.get('pass', 0)} passed, {stats.get('fail', 0)} failed");
+if (stats.get("fail", 0) > 0) {
+  exit(1);
+}
